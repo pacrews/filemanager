@@ -39,4 +39,6 @@ int dircheck(char lselection[MAXLIST][42], char rselection[MAXLIST][42], int *s)
 
 void move_parent(char lselection[MAXLIST][42], char rselection[MAXLIST][42]);
 
-void select_del(char lselection[MAXLIST][42], char rselection[MAXLIST][42]);
+int deldir(const char *fpath, const struct stat *sbm, int typeflag, struct FTW *ftwbuf);
+
+void select_delete(char lselection[MAXLIST][42], char rselection[MAXLIST][42]);

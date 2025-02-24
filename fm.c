@@ -7,8 +7,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <libgen.h>
+#include <ftw.h>
 #include "header.h"
 
+WINDOW *win;
 int frame = 1; //determines which pane the cursor is on (1 is right, 0 is left)
 int lprint_row,
 	rprint_row,
@@ -26,10 +28,11 @@ char *seldir;
 char *nextdir,
 	 *prevdir;
 
+char input = '\0';
+
 int main()
 {
 	//create window
-	WINDOW *win;
 	win = initscr();
 	init_screen(win);
 
@@ -68,7 +71,6 @@ int main()
 	move_right();
 
 	//user loop
-	char input = '\0';
 	//q to quit
 	while(input != 'q')
 	{
@@ -92,12 +94,21 @@ int main()
 		}
 		if(input == 'l')
 			move_right();
-		if(input == ' ')
+		if(input == ' ' || input == '\n')
 			move_select(lselection, rselection);
 		if(input == 'b')
 			move_parent(lselection, rselection);
 		if(input == 'd')
-			select_del(lselection, rselection);
+			select_delete(lselection, rselection);
+		if(input == 'r')
+			select_rename;
+		if(input == 'm')
+			select_move;
+		if(input == 'c')
+			select_copy;
+		if(input == 'p')
+			select_paste;
+
 		wrefresh(win);
 	}
 
@@ -147,7 +158,6 @@ void root_print(char selection[MAXLIST][42])
 		   strcmp(namelist[i]->d_name, "..") == 0 ||
 		   namelist[i]->d_type != 4)
 		{
-			free(namelist[i]);
 			continue;
 		}	else
 			{
@@ -162,11 +172,10 @@ void root_print(char selection[MAXLIST][42])
 					lcurs_row = lprint_row;
 				}
 				lprint_row++;
-				free(namelist[i]);
+			strcat(selected, "/*");
 				dirtree(subcheck, selection, x, &s);
 			}
 	}
-	free(namelist);
 }
 
 void dirtree(char *check, char selection[MAXLIST][42], int x, int *s)
@@ -178,13 +187,13 @@ void dirtree(char *check, char selection[MAXLIST][42], int x, int *s)
 	if(strncmp(check, seldir, strlen(check)) == 0)
 	{
 		b = scandir(check, &sublist, 0, alphasort);
+			strcat(selected, "/*");
 		for(a = 0; a < b; a++)
 		{
 			if(strcmp(sublist[a]->d_name, ".") == 0 ||
 			   strcmp(sublist[a]->d_name, "..") == 0 ||
 			   sublist[a]->d_type != 4)
 			{
-				free(sublist[a]);
 				continue;
 			}	else
 				{
@@ -200,11 +209,9 @@ void dirtree(char *check, char selection[MAXLIST][42], int x, int *s)
 						lcurs_row = lprint_row;
 					}
 					lprint_row++;
-					free(sublist[a]);
 					dirtree(check, selection, x + 1, s);
 				}
 		}
-		free(sublist);
 	}
 }
 
@@ -220,7 +227,6 @@ void dir_print(char selection[MAXLIST][42])
 		   strcmp(namelist[i]->d_name, "..") == 0 ||
 		   namelist[i]->d_type != 8)
 		{
-			free(namelist[i]);
 			continue;
 		}	else
 			{
@@ -228,10 +234,9 @@ void dir_print(char selection[MAXLIST][42])
 				strcpy(&selection[s][0], namelist[i]->d_name);
 				s++;
 				rprint_row++;
-				free(namelist[i]);
 			}
+			strcat(selected, "/*");
 	}
-	free(namelist);
 	if(rprint_row == BOXTROW + 1)
 	{
 		mvprintw(rprint_row, rprint_col, "No files in directory");
@@ -350,41 +355,60 @@ void move_right(void)
 void move_select(char lselection[MAXLIST][42], char rselection[MAXLIST][42])
 {
 	int n, s;
-	char *temp = malloc(PATH_MAX);
-	strcpy(temp, seldir);
-
-	clear_box();
 
 	if(frame == 0)
 		s = lcurs_row - (BOXTROW + 1);
 		else return;
 	if(dircheck(lselection, rselection, &s) == 0)
+	{
+		clear_box();
+		print_path();
+		root_print(lselection);
+		dir_print(rselection);
 		return;
-	seldir = dirname(temp);
-	move_select(lselection, rselection);
+	}
 }
 
 int dircheck(char lselection[MAXLIST][42], char rselection[MAXLIST][42], int *s)
 {
 	int i, n;
 	struct dirent **namelist;
+	char *temp = malloc(PATH_MAX);
+	strcpy(temp, seldir);
 	n = scandir(seldir, &namelist, 0, alphasort);
 	for(i = 0; i < n; i++)
 	{
-		if(strcmp(namelist[i]->d_name, &lselection[*s][0]) == 0)
+		if(frame == 0)
 		{
-			strcat(seldir, "/");
-			strcat(seldir, &lselection[*s][0]);
-			print_path();
-			root_print(lselection);
-			dir_print(rselection);
-			return 0;
-		}	else 
+			if(namelist[i]->d_type != 8 && strcmp(namelist[i]->d_name, &lselection[*s][0]) == 0)
 			{
-				free(namelist[i]);
-				continue;
+				if(seldir == temp)
+					return 1;
+				if(strcmp(seldir, "/") != 0)
+					strcat(seldir, "/");
+				strcat(seldir, &lselection[*s][0]);
+				return 0;
+			}	else 
+				{
+					continue;
+				}
+		}	else
+			{
+				if(strcmp(namelist[i]->d_name, &rselection[*s][0]) == 0)
+				{
+					if(seldir == temp)
+						return 1;
+					strcat(seldir, "/");
+					strcat(seldir, &rselection[*s][0]);
+					return 0;
+				}	else 
+					{
+						continue;
+					}
 			}
 	}
+	seldir = dirname(temp);
+	dircheck(lselection, rselection, s);
 }
 
 void move_parent(char lselection[MAXLIST][42], char rselection[MAXLIST][42])
@@ -402,7 +426,12 @@ void move_parent(char lselection[MAXLIST][42], char rselection[MAXLIST][42])
 	dir_print(rselection);
 }
 
-void select_del(char lselection[MAXLIST][42], char rselection[MAXLIST][42])
+int deldir(const char *fpath, const struct stat *sbm, int typeflag, struct FTW *ftwbuf)
+{
+	return remove(fpath);
+}
+
+void select_delete(char lselection[MAXLIST][42], char rselection[MAXLIST][42])
 {
 	char *selected = malloc(PATH_MAX),
 		 *temp = malloc(PATH_MAX);
@@ -420,7 +449,42 @@ void select_del(char lselection[MAXLIST][42], char rselection[MAXLIST][42])
 
 	dircheck(lselection, rselection, &s);
 
-	remove(selected);
+	if(frame == 1)
+	{
+		strcpy(selected, seldir);
+		clear_box();
+		mvprintw(BOXTROW + 1, BOXMCOL + 1, "Delete %s? [y/n]", selected);
+		for(;;)
+		{
+			input = getch();
+			if(input == 'y')
+			{
+				remove(selected);
+				break;
+			}
+			if(input == 'n')
+				break;
+		}
+	}	else
+		{
+			clear_box();
+			strcpy(selected, seldir);
+			mvprintw(BOXTROW + 1, BOXMCOL + 1, "Delete %s and all of its contents? [y/n]", selected);
+			for(;;)
+			{
+				input = getch();
+				if(input == 'y')
+				{
+					nftw(selected, deldir, 64, FTW_DEPTH | FTW_PHYS);
+					break;
+				}
+				if(input == 'n')
+				{
+					break;
+				}
+			}
+		}
+	strcpy(seldir, temp);
 	clear_box();
 	print_path();
 	root_print(lselection);
