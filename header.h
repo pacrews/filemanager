@@ -17,11 +17,11 @@ void init_screen(WINDOW *win);
 
 void print_path(void);
 
-void root_print(char selection[]);
+void root_print(char selection[MAXLIST]);
 
-void dirtree(char *check, char selection[], int x, int *s);
+void dirtree(char *check, char selection[MAXLIST], int x, int *s);
 
-void dir_print(char selection[]);
+void dir_print(char selection[MAXLIST]);
 
 void clear_box(void);
 
@@ -29,11 +29,11 @@ void move_left(void);
 
 void move_down(int *curs_row, int curs_col, int print_row);
 
-void move_up(int *curs_row, int curs_col, int print_row);
+void move_up(int *curs_row, int curs_col);
 
 void move_right(void);
 
-void move_select();
+void move_select(char lselection[MAXLIST], char rselection[MAXLIST]);
 
 void move_parent(char lselection[MAXLIST], char rselection[MAXLIST]);
 

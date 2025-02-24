@@ -47,7 +47,7 @@ int main()
 	
 	seldir = malloc(PATH_MAX);
 	getcwd(seldir, PATH_MAX);
-	realloc(seldir, strlen(seldir) + 10);
+	realloc(seldir, strlen(seldir));
 	nextdir = malloc(PATH_MAX),
 	prevdir = malloc(PATH_MAX);
 
@@ -93,14 +93,14 @@ int main()
 		if(input == 'k')
 		{
 			if(frame == 0)
-				move_up(&lcurs_row, lcurs_col, lprint_row);
+				move_up(&lcurs_row, lcurs_col);
 			if(frame == 1)
-				move_up(&rcurs_row, rcurs_col, rprint_row);
+				move_up(&rcurs_row, rcurs_col);
 		}
 		if(input == 'l')
 			move_right();
 		if(input == ' ')
-			move_select;
+			move_select(lselection, rselection);
 		if(input == 'b')
 			move_parent(lselection, rselection);
 	}
@@ -133,7 +133,7 @@ void print_path(void)
 	{
 		mvprintw(i, n, " ");
 	}
-	mvprintw(BOXTROW - 1, BOXLCOL + 1, "%s", seldir);
+	mvprintw(BOXTROW - 1, BOXLCOL + 1, "%ld, %s",sizeof(seldir), seldir);
 }
 
 void root_print(char selection[MAXLIST])
@@ -166,9 +166,11 @@ void root_print(char selection[MAXLIST])
 					lcurs_row = lprint_row;
 				}
 				lprint_row++;
+				free(namelist[i]);
 				dirtree(subcheck, selection, x, &s);
 			}
 	}
+	free(namelist);
 }
 
 void dirtree(char *check, char selection[MAXLIST], int x, int *s)
@@ -202,9 +204,11 @@ void dirtree(char *check, char selection[MAXLIST], int x, int *s)
 						lcurs_row = lprint_row;
 					}
 					lprint_row++;
+					free(sublist[a]);
 					dirtree(check, selection, x + 1, s);
 				}
 		}
+		free(sublist);
 	}
 }
 
@@ -228,8 +232,10 @@ void dir_print(char selection[MAXLIST])
 				strcpy(&selection[s], namelist[i]->d_name);
 				s++;
 				rprint_row++;
+				free(namelist[i]);
 			}
 	}
+	free(namelist);
 	if(rprint_row == BOXTROW + 1)
 	{
 		mvprintw(rprint_row, rprint_col, "No files in directory");
@@ -299,7 +305,7 @@ void move_down(int *curs_row, int curs_col, int print_row)
 	}
 }
 
-void move_up(int *curs_row, int curs_col, int print_row)
+void move_up(int *curs_row, int curs_col)
 {
 	if(*curs_row > BOXTROW + 1 )
 	{
@@ -339,10 +345,10 @@ void move_right(void)
 	}
 }
 
-void move_select()
+void move_select(char lselection[MAXLIST], char rselection[MAXLIST])
 {
 	int i,n, s;
-	char *temp;
+	char *temp = malloc(PATH_MAX);
 	struct dirent **namelist;
 	if(frame == 0)
 	{
@@ -351,10 +357,10 @@ void move_select()
 		n = scandir(seldir, &namelist, 0, alphasort);
 		for(i = 0; i < n; i++)
 		{
-			if(strcmp(namelist[i]->d_name, lselection[s] == 0)
+			if(strcmp(namelist[i]->d_name, &lselection[s]) == 0)
 			{
 				strcat(seldir, "/");
-				strcat(seldir, lselection[s]);
+				strcat(seldir, &lselection[s]);
 				clear_box();
 				mvchgat(lcurs_row, lcurs_col, BOXMCOL-BOXLCOL-3, A_NORMAL, A_COLOR, NULL);
 				mvchgat(rcurs_row, rcurs_col, BOXRCOL-BOXMCOL - 3, A_NORMAL, A_COLOR, NULL);
@@ -362,12 +368,20 @@ void move_select()
 				lprint_row = BOXTROW + 1;
 				rprint_row = BOXTROW + 1;
 				frame = 1;
-			
 				print_path();
 				root_print(lselection);
 				dir_print(rselection);
-			}
+				free(namelist[i]);
+				return;
+			}	else 
+				{
+					free(namelist[i]);
+					continue;
+				}
 		}
+		free(namelist);
+		seldir = dirname(temp);
+		move_select(lselection, rselection);
 	}
 }
 
