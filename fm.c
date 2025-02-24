@@ -7,21 +7,108 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <libgen.h>
+#include "header.h"
 
-//Defining Window & Box Sizes
-#define WINSTARTROW (getbegy(win) + 6)
-#define WINENDROW (getmaxy(win) - 1)
-#define WINSTARTCOL (getbegx(win) + 1)
-#define WINENDCOL (getmaxx(win) - 1)
-#define WINWIDTH (WINENDCOL - WINSTARTCOL - 2)
-#define WINHEIGHT (WINENDROW - WINSTARTROW - 2)
-#define BOXTROW (WINHEIGHT / 10 + WINSTARTROW)
-#define BOXBROW (WINENDROW - WINHEIGHT / 10)
-#define BOXLCOL (WINWIDTH / 15)
-#define BOXRCOL (WINENDCOL - WINWIDTH / 15)
-#define BOXWIDTH (BOXRCOL - BOXLCOL - 1)
-#define BOXHEIGHT (BOXBROW - BOXTROW - 1)
-#define BOXMCOL (BOXWIDTH / 3)
+int frame = 1; //determines which pane the cursor is on (1 is right, 0 is left)
+int lprint_row,
+	rprint_row,
+	rprint_col,
+	lprint_col;
+
+//set cursor rows/cols
+int	lcurs_row,
+	lcurs_col,
+	rcurs_row,
+	rcurs_col;
+
+//define directories
+char *seldir;
+char *nextdir,
+	 *prevdir;
+
+int main()
+{
+	//create window
+	WINDOW *win;
+	win = initscr();
+	init_screen(win);
+
+	//set print rows/cols
+	lprint_row = BOXTROW + 1,
+	rprint_row = BOXTROW + 1,
+	rprint_col = BOXMCOL + 2,
+	lprint_col = BOXLCOL + 2;
+
+	//set cursor rows/cols
+	lcurs_row = BOXTROW + 1,
+	lcurs_col = BOXLCOL + 2,
+	rcurs_row = BOXTROW + 1,
+	rcurs_col = BOXMCOL + 2;
+	
+	seldir = malloc(PATH_MAX);
+	getcwd(seldir, PATH_MAX);
+	realloc(seldir, strlen(seldir) + 10);
+	nextdir = malloc(PATH_MAX),
+	prevdir = malloc(PATH_MAX);
+
+	//define lists to pull selections from
+	char	lselection[MAXLIST],
+			rselection[MAXLIST];
+
+	//print current path above box
+	print_path();
+
+	//print directory list on left pane
+	root_print(lselection);
+
+	//print contents on right pane
+	dir_print(rselection);
+
+	//init formatting; setting default cursor on right pane and right box blinks
+	//to indicate where cursor is
+	mvchgat(BOXTROW, BOXMCOL, BOXRCOL - BOXMCOL, A_BLINK, A_COLOR, NULL);
+	mvchgat(BOXBROW, BOXMCOL, BOXRCOL - BOXMCOL, A_BLINK, A_COLOR, NULL);
+	for(int i = BOXTROW + 1; i < BOXBROW + 1; i++)
+	{
+		mvchgat(i, BOXMCOL, 1, A_BLINK, A_COLOR, NULL);
+		mvchgat(i, BOXRCOL, 1, A_BLINK, A_COLOR, NULL);
+	}
+
+	//user loop
+	char input = '\0';
+	//q to quit
+	while(input != 'q')
+	{
+		input = getch();
+
+		if(input == 'h')
+			move_left();
+		if(input == 'j')
+		{
+			if(frame == 0)
+				move_down(&lcurs_row, lcurs_col, lprint_row);
+			if(frame == 1)
+				move_down(&rcurs_row, rcurs_col, rprint_row);
+		}
+		if(input == 'k')
+		{
+			if(frame == 0)
+				move_up(&lcurs_row, lcurs_col, lprint_row);
+			if(frame == 1)
+				move_up(&rcurs_row, rcurs_col, rprint_row);
+		}
+		if(input == 'l')
+			move_right();
+		if(input == ' ')
+			move_select;
+		if(input == 'b')
+			move_parent(lselection, rselection);
+	}
+
+	//end window and close application after exiting loop with 'q'
+	endwin();
+	return 0;
+}
 
 void init_screen(WINDOW *win)
 {
@@ -29,108 +116,275 @@ void init_screen(WINDOW *win)
 	noecho();
 	cbreak();
 	curs_set(0);
-	mvwhline(win, WINSTARTROW, WINSTARTCOL, '-', WINWIDTH);
-	mvwprintw(win, WINSTARTROW - 3, WINWIDTH / 2 - 5, "FileManager");
-	mvwhline(win, BOXTROW, BOXLCOL + 1, '-', BOXWIDTH);
-	mvwhline(win, BOXBROW, BOXLCOL + 1, '-', BOXWIDTH);
-	mvwvline(win, BOXTROW + 1, BOXLCOL, '|', BOXHEIGHT);
-	mvwvline(win, BOXTROW + 1, BOXRCOL, '|', BOXHEIGHT);
-	mvwvline(win, BOXTROW + 1, BOXMCOL, '|', BOXHEIGHT);
+	mvwhline(win, TOPROW, LCOL, '-', WIDTH);
+	mvwprintw(win, TOPROW - 3, WIDTH / 2 - 5, "FileManager");
+	mvwhline(win, BOXTROW, BOXLCOL + 1, '-', BWIDTH);
+	mvwhline(win, BOXBROW, BOXLCOL + 1, '-', BWIDTH);
+	mvwvline(win, BOXTROW + 1, BOXLCOL, '|', BHEIGHT);
+	mvwvline(win, BOXTROW + 1, BOXRCOL, '|', BHEIGHT);
+	mvwvline(win, BOXTROW + 1, BOXMCOL, '|', BHEIGHT);
+	mvchgat(BOXTROW - 1, BOXLCOL + 1, BOXRCOL - BOXLCOL, A_BOLD, A_COLOR, NULL);
 }
 
-void root_print(char *dir, int n, struct dirent **namelist, int print_row, int print_col)
+void print_path(void)
 {
-
-	int	i;
-		
-		for(i = 0; i < n; i++)
-		{
-			if(strcmp(namelist[i]->d_name, ".") == 0 || strcmp(namelist[i]->d_name, "..") == 0)
-			{
-				free(namelist[i]);
-				continue;
-			}
-			mvprintw(print_row, print_col, "> %s", namelist[i]->d_name);
-			print_row++;
-		}
-}
-
-int main()
-{
-	//Create window
-	WINDOW *win;
-	win = initscr();
-	init_screen(win);
-
-	//create initial print and cursor positions
-	int rprint_row = BOXTROW + 1,
-		rprint_col = BOXMCOL + 2,
-		lprint_row = BOXTROW + 1,
-		lprint_col = BOXLCOL + 2;
-	int curs_row = BOXTROW + 1, 
-		curs_col = BOXMCOL + 4;
-
-	wmove(win, curs_row, curs_col);
-
-	//Create lists and print to window
-	struct dirent **namelist;
-	DIR *dirp;
-	char *rootdir, *seldir, *nxtdir, *prevdir;
 	int i, n;
-	rootdir = (char *) malloc(PATH_MAX);
-	seldir = (char *) malloc(PATH_MAX);
-	nxtdir = (char *) malloc(PATH_MAX);
-	prevdir = (char *) malloc(PATH_MAX);
-	getcwd(seldir, PATH_MAX);
-	rootdir = dirname(*seldir);
-	mvwprintw(win, BOXTROW - 1, BOXLCOL + 1, "%s", seldir);
-	
-	//print left side
-	n = scandir(rootdir, &namelist, 0, alphasort);
-	root_print(rootdir, n, namelist, lprint_row, lprint_col);
-
-	//print right side
-	n = scandir(seldir,&namelist,0, alphasort);
-	dirp = opendir(seldir);
-	if(dirp)
+	for(i = BOXTROW - 1, n = BOXLCOL + 1; n < BOXRCOL; n++)
 	{
-		for(i = 0; i < n; i++)
+		mvprintw(i, n, " ");
+	}
+	mvprintw(BOXTROW - 1, BOXLCOL + 1, "%s", seldir);
+}
+
+void root_print(char selection[MAXLIST])
+{
+	char *dir = malloc(2);
+	strcpy(dir, "/");
+	struct dirent **namelist;
+	int i, n, x = 1, s = 0;
+	char *subcheck = malloc(PATH_MAX);
+	n = scandir(dir, &namelist, 0, alphasort);
+
+	for(i = 0; i < n; i++)
+	{
+		if(strcmp(namelist[i]->d_name, ".") == 0 ||
+		   strcmp(namelist[i]->d_name, "..") == 0 ||
+		   namelist[i]->d_type != 4)
 		{
-			if(strcmp(namelist[i]->d_name, ".") == 0 || strcmp(namelist[i]->d_name, "..") == 0)
+			free(namelist[i]);
+			continue;
+		}	else
 			{
-				free(namelist[i]);
-				continue;
+				mvprintw(lprint_row, lprint_col, "> %s", namelist[i]->d_name);
+				strcpy(&selection[s], namelist[i]->d_name);
+				s++;
+				strcpy(subcheck, "/");
+				strcat(subcheck, namelist[i]->d_name);
+				if(strcmp(subcheck, seldir) == 0)
+				{
+					mvchgat(lprint_row, BOXLCOL + 2, BOXMCOL - BOXLCOL - 3, A_STANDOUT, A_COLOR, NULL);
+					lcurs_row = lprint_row;
+				}
+				lprint_row++;
+				dirtree(subcheck, selection, x, &s);
 			}
-			else
+	}
+}
+
+void dirtree(char *check, char selection[MAXLIST], int x, int *s)
+{
+	struct dirent **sublist;
+	int a, b;
+	char *subcheck = malloc(PATH_MAX);
+	strcpy(subcheck, check);
+	if(strncmp(check, seldir, strlen(check)) == 0)
+	{
+		b = scandir(check, &sublist, 0, alphasort);
+		for(a = 0; a < b; a++)
+		{
+			if(strcmp(sublist[a]->d_name, ".") == 0 ||
+			   strcmp(sublist[a]->d_name, "..") == 0 ||
+			   sublist[a]->d_type != 4)
 			{
-				mvwprintw(win, rprint_row, rprint_col, "> %s", namelist[i]->d_name);
+				free(sublist[a]);
+				continue;
+			}	else
+				{
+					mvprintw(lprint_row, lprint_col + x, "> %s", sublist[a]->d_name);
+					strcpy(&selection[*s], sublist[a]->d_name);
+					(*s)++;
+					strcpy(check, subcheck);
+					strcat(check, "/");
+					strcat(check, sublist[a]->d_name);
+					if(strcmp(check, seldir) == 0)
+					{
+						mvchgat(lprint_row, BOXLCOL + 2, BOXMCOL - BOXLCOL - 3, A_STANDOUT, A_COLOR, NULL);
+						lcurs_row = lprint_row;
+					}
+					lprint_row++;
+					dirtree(check, selection, x + 1, s);
+				}
+		}
+	}
+}
+
+void dir_print(char selection[MAXLIST])
+{
+	struct dirent **namelist;
+	int i, n, s = 0;
+	n = scandir(seldir, &namelist, 0, alphasort);
+
+	for(i = 0; i < n; i++)
+	{
+		if(strcmp(namelist[i]->d_name, ".") == 0 ||
+		   strcmp(namelist[i]->d_name, "..") == 0 ||
+		   namelist[i]->d_type != 8)
+		{
+			free(namelist[i]);
+			continue;
+		}	else
+			{
+				mvprintw(rprint_row, rprint_col, "> %s", namelist[i]->d_name);
+				strcpy(&selection[s], namelist[i]->d_name);
+				s++;
 				rprint_row++;
 			}
-		}
-		closedir(dirp);
 	}
-	wmove(win, curs_row, curs_col);
-	wrefresh(win);
-
-	//Main Loop of navigation and commands issued by user
-	char input = '\0';
-	
-	while (input != 'q')
+	if(rprint_row == BOXTROW + 1)
 	{
-		input = getch();
+		mvprintw(rprint_row, rprint_col, "No files in directory");
+		move_left();
 	}
+		else
+		{
+			mvchgat(BOXTROW + 1, BOXMCOL + 2, BOXRCOL - BOXMCOL - 3, A_STANDOUT, A_COLOR, NULL);
+			move_right();
+		}
+}
 
-	//open directories and print new lists
+void clear_box(void)
+{
+	int i, n;
 
-	//rename files and directories
+	for(i = BOXTROW + 1; i < BOXBROW; i++)
+	{
+		for(n = BOXLCOL + 1; n < BOXMCOL; n++)
+		{
+			mvprintw(i, n, " ");
+		}
+		for(n = BOXMCOL + 1; n < BOXRCOL; n++)
+		{
+			mvprintw(i, n, " ");
+		}
+	}
+}
 
-	//remove files and directories
+void move_left(void)
+{
+	int i, n;
+	if(frame == 1)
+	{
+		frame = 0;
+		mvchgat(BOXTROW, BOXMCOL, BOXRCOL - BOXMCOL, A_NORMAL, A_COLOR, NULL);
+		mvchgat(BOXBROW, BOXMCOL, BOXRCOL - BOXMCOL, A_NORMAL, A_COLOR, NULL);
+		for(i = BOXTROW + 1; i < BOXBROW; i++)
+		{
+			mvchgat(i, BOXRCOL, 1, A_NORMAL, A_COLOR, NULL);
+		}
 
-	//copy/paste files and directories
+		mvchgat(BOXTROW, BOXLCOL + 1, BOXMCOL - BOXLCOL, A_BLINK, A_COLOR, NULL);
+		mvchgat(BOXBROW, BOXLCOL + 1, BOXMCOL - BOXLCOL, A_BLINK, A_COLOR, NULL);
+		for(n = BOXTROW + 1; n < BOXBROW; n++)
+		{
+			mvchgat(n, BOXLCOL, 1, A_BLINK, A_COLOR, NULL);
+		}
+		move(lcurs_row, lcurs_col);
+	}
+}
 
-	//move files and directories
+void move_down(int *curs_row, int curs_col, int print_row)
+{
+	if(*curs_row < print_row - 1)
+	{
+		if(frame == 0)
+			mvchgat(*curs_row, curs_col, BOXMCOL - BOXLCOL - 3, A_NORMAL, A_COLOR, NULL);
+		if(frame == 1)
+			mvchgat(*curs_row, curs_col, BOXRCOL - BOXMCOL - 3, A_NORMAL, A_COLOR, NULL);
+		(*curs_row)++;
+		move(*curs_row, curs_col);
+		if(frame == 0)
+			mvchgat(*curs_row, curs_col, BOXMCOL - BOXLCOL - 3, A_STANDOUT, A_COLOR, NULL);
+		if(frame == 1)
+			mvchgat(*curs_row, curs_col, BOXRCOL - BOXMCOL - 3, A_STANDOUT, A_COLOR, NULL);
+	}
+}
 
-	//exit application
-	endwin();
-	return 0;
+void move_up(int *curs_row, int curs_col, int print_row)
+{
+	if(*curs_row > BOXTROW + 1 )
+	{
+		if(frame == 0)
+			mvchgat(*curs_row, curs_col, BOXMCOL - BOXLCOL - 3, A_NORMAL, A_COLOR, NULL);
+		if(frame == 1)
+			mvchgat(*curs_row, curs_col, BOXRCOL - BOXMCOL - 3, A_NORMAL, A_COLOR, NULL);
+		(*curs_row)--;
+		move(*curs_row, curs_col);
+		if(frame == 0)
+			mvchgat(*curs_row, curs_col, BOXMCOL - BOXLCOL - 3, A_STANDOUT, A_COLOR, NULL);
+		if(frame == 1)
+			mvchgat(*curs_row, curs_col, BOXRCOL - BOXMCOL - 3, A_STANDOUT, A_COLOR, NULL);
+	}
+}
+
+void move_right(void)
+{
+	int i, n;
+	if(frame == 0)
+	{
+		frame = 1;
+		mvchgat(BOXTROW, BOXMCOL, BOXRCOL - BOXMCOL, A_BLINK, A_COLOR, NULL);
+		mvchgat(BOXBROW, BOXMCOL, BOXRCOL - BOXMCOL, A_BLINK, A_COLOR, NULL);
+		for(i = BOXTROW + 1; i < BOXBROW; i++)
+		{
+			mvchgat(i, BOXRCOL, 1, A_BLINK, A_COLOR, NULL);
+		}
+
+		mvchgat(BOXTROW, BOXLCOL + 1, BOXMCOL - BOXLCOL, A_NORMAL, A_COLOR, NULL);
+		mvchgat(BOXBROW, BOXLCOL + 1, BOXMCOL - BOXLCOL, A_NORMAL, A_COLOR, NULL);
+		for(n = BOXTROW + 1; n < BOXBROW; n++)
+		{
+			mvchgat(n, BOXLCOL, 1, A_NORMAL, A_COLOR, NULL);
+		}
+		move(rcurs_row, rcurs_col);
+	}
+}
+
+void move_select()
+{
+	int i,n, s;
+	char *temp;
+	struct dirent **namelist;
+	if(frame == 0)
+	{
+		s = lcurs_row - (BOXTROW + 1);
+		strcpy(temp, seldir);
+		n = scandir(seldir, &namelist, 0, alphasort);
+		for(i = 0; i < n; i++)
+		{
+			if(strcmp(namelist[i]->d_name, lselection[s] == 0)
+			{
+				strcat(seldir, "/");
+				strcat(seldir, lselection[s]);
+				clear_box();
+				mvchgat(lcurs_row, lcurs_col, BOXMCOL-BOXLCOL-3, A_NORMAL, A_COLOR, NULL);
+				mvchgat(rcurs_row, rcurs_col, BOXRCOL-BOXMCOL - 3, A_NORMAL, A_COLOR, NULL);
+				rcurs_row = BOXTROW + 1;
+				lprint_row = BOXTROW + 1;
+				rprint_row = BOXTROW + 1;
+				frame = 1;
+			
+				print_path();
+				root_print(lselection);
+				dir_print(rselection);
+			}
+		}
+	}
+}
+
+void move_parent(char lselection[MAXLIST], char rselection[MAXLIST])
+{
+	prevdir = dirname(seldir);
+	strcpy(seldir, prevdir);
+	
+	clear_box();
+	mvchgat(lcurs_row, lcurs_col, BOXMCOL-BOXLCOL - 3, A_NORMAL, A_COLOR, NULL);
+	mvchgat(rcurs_row, rcurs_col, BOXRCOL-BOXMCOL - 3, A_NORMAL, A_COLOR, NULL);
+	rcurs_row = BOXTROW + 1;
+	lprint_row = BOXTROW + 1;
+	rprint_row = BOXTROW + 1;
+	frame = 1;
+	
+	print_path();
+	root_print(lselection);
+	dir_print(rselection);
 }
