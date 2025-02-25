@@ -11,7 +11,7 @@
 #define BWIDTH	(BOXRCOL - BOXLCOL - 1)
 #define BHEIGHT	(BOXBROW - BOXTROW - 1)
 #define BOXMCOL	(BWIDTH / 3)
-#define MAXLIST (BHEIGHT + 1)
+#define MAXLIST PATH_MAX
 
 void init_screen(WINDOW *win);
 
@@ -42,3 +42,5 @@ void move_parent(char lselection[MAXLIST][42], char rselection[MAXLIST][42]);
 int deldir(const char *fpath, const struct stat *sbm, int typeflag, struct FTW *ftwbuf);
 
 void select_delete(char lselection[MAXLIST][42], char rselection[MAXLIST][42]);
+
+void select_rename(char lselection[MAXLIST][42], char rselection[MAXLIST][42]);

@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <curses.h>
 #include <ncurses.h>
 #include <dirent.h>
@@ -16,6 +17,14 @@ int lprint_row,
 	rprint_row,
 	rprint_col,
 	lprint_col;
+//need to add a scroll variable which indicates what is the first [s] printed in the window
+//can calculate from there what selection is to be chosen when doing any actions
+/*i.e. 
+int list = 0; 
+when curs_row is at BOXBROW - 1, list++ when scrolling down by 1. 
+Then it reprints the list starting from selection[list] all the way to the bottom.
+could possibly include hotkey that will scroll down by a whole page for speed
+*/
 
 //set cursor rows/cols
 int	lcurs_row,
@@ -72,27 +81,27 @@ int main()
 
 	//user loop
 	//q to quit
-	while(input != 'q')
+	while(input != 'q' && input != 27)
 	{
 		input = getch();
 
-		if(input == 'h')
+		if(input == 'h' || input == 'D')
 			move_left();
-		if(input == 'j')
+		if(input == 'j' || input == 'B')
 		{
 			if(frame == 0)
 				move_down(&lcurs_row, lcurs_col, lprint_row);
 			if(frame == 1)
 				move_down(&rcurs_row, rcurs_col, rprint_row);
 		}
-		if(input == 'k')
+		if(input == 'k' || input == 'A')
 		{
 			if(frame == 0)
 				move_up(&lcurs_row, lcurs_col);
 			if(frame == 1)
 				move_up(&rcurs_row, rcurs_col);
 		}
-		if(input == 'l')
+		if(input == 'l' || input == 'C')
 			move_right();
 		if(input == ' ' || input == '\n')
 			move_select(lselection, rselection);
@@ -101,14 +110,14 @@ int main()
 		if(input == 'd')
 			select_delete(lselection, rselection);
 		if(input == 'r')
-			select_rename;
-		if(input == 'm')
+			select_rename(lselection, rselection);
+/*		if(input == 'm')
 			select_move;
 		if(input == 'c')
 			select_copy;
 		if(input == 'p')
 			select_paste;
-
+*/
 		wrefresh(win);
 	}
 
@@ -154,6 +163,8 @@ void root_print(char selection[MAXLIST][42])
 
 	for(i = 0; i < n; i++)
 	{
+	if(lprint_row < BOXBROW)
+	{
 		if(strcmp(namelist[i]->d_name, ".") == 0 ||
 		   strcmp(namelist[i]->d_name, "..") == 0 ||
 		   namelist[i]->d_type != 4)
@@ -172,9 +183,16 @@ void root_print(char selection[MAXLIST][42])
 					lcurs_row = lprint_row;
 				}
 				lprint_row++;
-			strcat(selected, "/*");
 				dirtree(subcheck, selection, x, &s);
 			}
+	}	else
+		{
+			strcpy(&selection[s][0], namelist[i]->d_name);
+			s++;
+			strcpy(subcheck, "/");
+			strcat(subcheck, namelist[i]->d_name);
+			dirtree(subcheck, selection, x, &s);
+		}
 	}
 }
 
@@ -187,8 +205,9 @@ void dirtree(char *check, char selection[MAXLIST][42], int x, int *s)
 	if(strncmp(check, seldir, strlen(check)) == 0)
 	{
 		b = scandir(check, &sublist, 0, alphasort);
-			strcat(selected, "/*");
 		for(a = 0; a < b; a++)
+		{
+		if(lprint_row < BOXBROW)
 		{
 			if(strcmp(sublist[a]->d_name, ".") == 0 ||
 			   strcmp(sublist[a]->d_name, "..") == 0 ||
@@ -211,6 +230,15 @@ void dirtree(char *check, char selection[MAXLIST][42], int x, int *s)
 					lprint_row++;
 					dirtree(check, selection, x + 1, s);
 				}
+		}	else
+			{
+				strcpy(&selection[*s][0], sublist[a]->d_name);
+				(*s)++;
+				strcpy(check, subcheck);
+				strcat(check, "/");
+				strcat(check, sublist[a]->d_name);
+				dirtree(check, selection, x+1, s);
+			}
 		}
 	}
 }
@@ -222,6 +250,8 @@ void dir_print(char selection[MAXLIST][42])
 	n = scandir(seldir, &namelist, 0, alphasort);
 
 	for(i = 0; i < n; i++)
+	{
+	if(rprint_row < BOXBROW)
 	{
 		if(strcmp(namelist[i]->d_name, ".") == 0 ||
 		   strcmp(namelist[i]->d_name, "..") == 0 ||
@@ -235,7 +265,11 @@ void dir_print(char selection[MAXLIST][42])
 				s++;
 				rprint_row++;
 			}
-			strcat(selected, "/*");
+	}	else
+		{
+			strcpy(&selection[s][0], namelist[i]->d_name);
+			s++;
+		}
 	}
 	if(rprint_row == BOXTROW + 1)
 	{
@@ -354,7 +388,7 @@ void move_right(void)
 //this function currently only allows selection of directories for navigation
 void move_select(char lselection[MAXLIST][42], char rselection[MAXLIST][42])
 {
-	int n, s;
+	int s;
 
 	if(frame == 0)
 		s = lcurs_row - (BOXTROW + 1);
@@ -436,7 +470,6 @@ void select_delete(char lselection[MAXLIST][42], char rselection[MAXLIST][42])
 	char *selected = malloc(PATH_MAX),
 		 *temp = malloc(PATH_MAX);
 	int s;
-	struct dirent **namelist;
 	strcpy(temp, seldir);
 
 	if(frame == 0)
@@ -485,6 +518,53 @@ void select_delete(char lselection[MAXLIST][42], char rselection[MAXLIST][42])
 			}
 		}
 	strcpy(seldir, temp);
+	clear_box();
+	print_path();
+	root_print(lselection);
+	dir_print(rselection);
+}
+
+void select_rename(char lselection[MAXLIST][42], char rselection[MAXLIST][42])
+{
+	char *new_name = malloc(PATH_MAX);
+	char *temp = malloc(PATH_MAX);
+	int i, s;
+	if(frame == 0)
+		s = lcurs_row - (BOXTROW + 1);
+		else s = rcurs_row - (BOXTROW + 1);
+	strcpy(temp, seldir);
+	if(dircheck(lselection, rselection, &s) == 0)
+	{
+		if(frame == 0)
+		{
+			for(i = BOXLCOL + 2; i < BOXMCOL; i++)
+			{
+				mvprintw(lcurs_row, i, " ");
+			}
+		}	else
+			{
+				for(i = BOXMCOL + 2; i < BOXRCOL; i++)
+				{
+					mvprintw(rcurs_row, i, " ");
+				}
+			}
+	}
+	if(frame == 0)
+		move(lcurs_row, lcurs_col);
+		else move(rcurs_row, rcurs_col);
+	curs_set(1);
+	echo();
+	getstr(new_name);
+	curs_set(0);
+	noecho();
+	if(strcmp(seldir, temp) == 0)
+	{
+		rename(seldir, new_name);
+	}	else
+		{
+			rename(seldir, new_name);
+			strcpy(seldir, temp);
+		}
 	clear_box();
 	print_path();
 	root_print(lselection);
